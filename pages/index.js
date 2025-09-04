@@ -576,7 +576,10 @@ export default function Home() {
   // as null and no confetti will fire.
   useEffect(() => {
     let mounted = true;
-    import('canvas-confetti')
+    // Import the browser build of canvas-confetti.  The default package entry
+    // sometimes resolves to a Node build that doesn't run in the browser when
+    // loaded dynamically.  The browser build lives under the dist directory.
+    import('canvas-confetti/dist/confetti.browser')
       .then((mod) => {
         if (!mounted) return;
         const fn = mod.default || mod;
