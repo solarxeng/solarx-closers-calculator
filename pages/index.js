@@ -568,22 +568,38 @@ export default function Home() {
     if (Number.isFinite(num)) setSystemSize(num.toFixed(2));
   };
   const [splitPct, setSplitPct] = useState(40);
-  const chooseSplit = (pct) => {
-    setSplitPct(pct);
-    // Dynamically import confetti only when a split is chosen.  This avoids
-    // loading the library during SSR and means reps who never change splits
-    // don't pay the cost of loading the module.  If the import fails the
-    // promise is rejected and nothing happens.
+  // Hold a reference to the confetti function once it has been loaded on the client.
+  const confettiRef = useRef(null);
+  // Load canvas-confetti on the client after the component mounts.  We do this once
+  // so the module isn't fetched every time a split is chosen, and to avoid
+  // importing it during SSR.  If the import fails we simply leave the ref
+  // as null and no confetti will fire.
+  useEffect(() => {
+    let mounted = true;
     import('canvas-confetti')
       .then((mod) => {
-        const confettiFn = mod.default || mod;
-        if (typeof confettiFn === 'function') {
-          confettiFn({ particleCount: 120, spread: 70, origin: { y: 0.2 } });
+        if (!mounted) return;
+        const fn = mod.default || mod;
+        if (typeof fn === 'function') {
+          confettiRef.current = fn;
         }
       })
       .catch(() => {
-        /* swallow errors; silently no confetti */
+        // ignore import errors
       });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+  const chooseSplit = (pct) => {
+    setSplitPct(pct);
+    // Fire confetti only if the module has been loaded successfully.  This
+    // prevents runtime errors when the module isn't available (e.g. SSR) and
+    // avoids re-importing on every click.
+    const confettiFn = confettiRef.current;
+    if (typeof confettiFn === 'function') {
+      confettiFn({ particleCount: 120, spread: 70, origin: { y: 0.2 } });
+    }
   };
   const numericSystemSize = parseFloat(systemSize) || 0;
   const numericPpwSold = parseFloat(ppwSold) || 0;
