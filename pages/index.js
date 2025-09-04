@@ -360,8 +360,14 @@ function useTypewriterQuotes(quotes, cycleMs = 15000) {
 const CashStackSVG = ({ className }) => (
   <svg
     viewBox="0 0 64 40"
-    // Provide explicit width and height fallback for non-Tailwind environments
-    style={{ width: className ? undefined : '64px', height: className ? undefined : '40px' }}
+    /**
+     * Provide explicit width and height fallback for non‑Tailwind environments.  The
+     * original component expected utility classes (e.g. w‑12 h‑8) to size the
+     * stack. Without those classes the SVG expands to fill the container.  To
+     * keep the green bills subtle, scale the default down to 32×20px. If a
+     * custom className is supplied the caller controls sizing.
+     */
+    style={{ width: className ? undefined : '32px', height: className ? undefined : '20px' }}
     className={className || ''}
     xmlns="http://www.w3.org/2000/svg"
     aria-hidden
@@ -390,7 +396,10 @@ const CashStack = ({ index }) => {
   const cols = 5;
   const col = index % cols;
   const row = Math.floor(index / cols);
-  const stackH = 30;
+  // Each stack occupies roughly the same height as the SVG.  Reduce the
+  // baseline from 30px to 20px to match the scaled CashStackSVG height.  This
+  // prevents the cash graphics from dominating the Final Commission area.
+  const stackH = 20;
   const rightPct = col * (100 / cols);
   const bottomPx = row * (stackH - 2);
   const rotate = col % 2 ? -4 : 4;
@@ -503,27 +512,13 @@ function StateWatermark({ stateName, redlineRaw }) {
 const labelForFinance = (k) => FINANCE_LABELS[k] || k;
 
 export default function Home() {
-  // We'll load confetti dynamically on the client because 'canvas-confetti'
-  // cannot be imported on the server. The ref will hold the loaded
-  // function once the module is available. If the import fails or runs
-  // during SSR, the ref remains null and no confetti will fire.
-  const confettiRef = useRef(null);
-  useEffect(() => {
-    let mounted = true;
-    import('canvas-confetti')
-      .then((mod) => {
-        if (mounted) {
-          // Some bundlers expose the function as default, others as the module itself.
-          confettiRef.current = mod.default || mod;
-        }
-      })
-      .catch(() => {
-        // swallow any errors; confetti will simply not fire if the module fails to load
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  /*
+   * Confetti is loaded on demand inside the chooseSplit handler.  Importing
+   * 'canvas-confetti' on the server causes SSR failures, and a static
+   * import at the module scope can throw during build.  Rather than
+   * pre‑loading the module in an effect, we defer loading until the user
+   * actually triggers a split change.  See chooseSplit below.
+   */
   const states = useMemo(() => Object.keys(pricingByState), []);
   const [stateSel, setStateSel] = useState(states[0] || '');
   const utilitiesForState = useMemo(() => {
@@ -575,10 +570,20 @@ export default function Home() {
   const [splitPct, setSplitPct] = useState(40);
   const chooseSplit = (pct) => {
     setSplitPct(pct);
-    // trigger confetti only if the module has been loaded
-    if (confettiRef.current) {
-      confettiRef.current({ particleCount: 120, spread: 70, origin: { y: 0.2 } });
-    }
+    // Dynamically import confetti only when a split is chosen.  This avoids
+    // loading the library during SSR and means reps who never change splits
+    // don't pay the cost of loading the module.  If the import fails the
+    // promise is rejected and nothing happens.
+    import('canvas-confetti')
+      .then((mod) => {
+        const confettiFn = mod.default || mod;
+        if (typeof confettiFn === 'function') {
+          confettiFn({ particleCount: 120, spread: 70, origin: { y: 0.2 } });
+        }
+      })
+      .catch(() => {
+        /* swallow errors; silently no confetti */
+      });
   };
   const numericSystemSize = parseFloat(systemSize) || 0;
   const numericPpwSold = parseFloat(ppwSold) || 0;
