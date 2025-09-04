@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import confetti from 'canvas-confetti';
+// confetti will be loaded dynamically on the client to avoid SSR issues
 import usaMap from '@svg-maps/usa';
 
 // Full redline dataset. Each state contains one or more utility sections,
@@ -360,7 +360,9 @@ function useTypewriterQuotes(quotes, cycleMs = 15000) {
 const CashStackSVG = ({ className }) => (
   <svg
     viewBox="0 0 64 40"
-    className={className || 'w-12 h-8'}
+    // Provide explicit width and height fallback for non-Tailwind environments
+    style={{ width: className ? undefined : '64px', height: className ? undefined : '40px' }}
+    className={className || ''}
     xmlns="http://www.w3.org/2000/svg"
     aria-hidden
   >
@@ -501,6 +503,27 @@ function StateWatermark({ stateName, redlineRaw }) {
 const labelForFinance = (k) => FINANCE_LABELS[k] || k;
 
 export default function Home() {
+  // We'll load confetti dynamically on the client because 'canvas-confetti'
+  // cannot be imported on the server. The ref will hold the loaded
+  // function once the module is available. If the import fails or runs
+  // during SSR, the ref remains null and no confetti will fire.
+  const confettiRef = useRef(null);
+  useEffect(() => {
+    let mounted = true;
+    import('canvas-confetti')
+      .then((mod) => {
+        if (mounted) {
+          // Some bundlers expose the function as default, others as the module itself.
+          confettiRef.current = mod.default || mod;
+        }
+      })
+      .catch(() => {
+        // swallow any errors; confetti will simply not fire if the module fails to load
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
   const states = useMemo(() => Object.keys(pricingByState), []);
   const [stateSel, setStateSel] = useState(states[0] || '');
   const utilitiesForState = useMemo(() => {
@@ -552,7 +575,10 @@ export default function Home() {
   const [splitPct, setSplitPct] = useState(40);
   const chooseSplit = (pct) => {
     setSplitPct(pct);
-    confetti({ particleCount: 120, spread: 70, origin: { y: 0.2 } });
+    // trigger confetti only if the module has been loaded
+    if (confettiRef.current) {
+      confettiRef.current({ particleCount: 120, spread: 70, origin: { y: 0.2 } });
+    }
   };
   const numericSystemSize = parseFloat(systemSize) || 0;
   const numericPpwSold = parseFloat(ppwSold) || 0;
