@@ -570,38 +570,38 @@ export default function Home() {
   const [splitPct, setSplitPct] = useState(40);
   // Hold a reference to the confetti function once it has been loaded on the client.
   const confettiRef = useRef(null);
-  // Load canvas-confetti on the client after the component mounts.  We do this once
-  // so the module isn't fetched every time a split is chosen, and to avoid
-  // importing it during SSR.  If the import fails we simply leave the ref
-  // as null and no confetti will fire.
-  useEffect(() => {
-    let mounted = true;
-    // Import the browser build of canvas-confetti.  The default package entry
-    // sometimes resolves to a Node build that doesn't run in the browser when
-    // loaded dynamically.  The browser build lives under the dist directory.
-    import('canvas-confetti/dist/confetti.browser')
-      .then((mod) => {
-        if (!mounted) return;
-        const fn = mod.default || mod;
-        if (typeof fn === 'function') {
-          confettiRef.current = fn;
-        }
-      })
-      .catch(() => {
-        // ignore import errors
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
-  const chooseSplit = (pct) => {
+  /*
+   * Load the canvas-confetti module on demand.  We avoid a static import at
+   * the module level because the default package entry may resolve to a Node
+   * build that doesn't execute in the browser when used with dynamic import.
+   * Instead, we attempt to import the module the first time a split is chosen.
+   * If successful, the returned function is cached on confettiRef.  Subsequent
+   * clicks will reuse the cached function.  If the import fails, no confetti
+   * will fire.
+   */
+  const chooseSplit = async (pct) => {
     setSplitPct(pct);
-    // Fire confetti only if the module has been loaded successfully.  This
-    // prevents runtime errors when the module isn't available (e.g. SSR) and
-    // avoids re-importing on every click.
-    const confettiFn = confettiRef.current;
-    if (typeof confettiFn === 'function') {
-      confettiFn({ particleCount: 120, spread: 70, origin: { y: 0.2 } });
+    try {
+      let confettiFn = confettiRef.current;
+      if (!confettiFn) {
+        // Attempt to import the browser-friendly build of canvas-confetti.  If
+        // this import fails (e.g. the module isn't available), we fall back to
+        // the default entry.  Using await here means the UI will update the
+        // split percentage immediately, and confetti will fire once the module
+        // has finished loading.
+        const mod = await import('canvas-confetti/dist/confetti.browser').catch(() =>
+          import('canvas-confetti')
+        );
+        confettiFn = mod.default || mod;
+        if (typeof confettiFn === 'function') {
+          confettiRef.current = confettiFn;
+        }
+      }
+      if (typeof confettiFn === 'function') {
+        confettiFn({ particleCount: 120, spread: 70, origin: { y: 0.2 } });
+      }
+    } catch (err) {
+      // ignore dynamic import errors
     }
   };
   const numericSystemSize = parseFloat(systemSize) || 0;
@@ -850,7 +850,20 @@ export default function Home() {
                 overflow: 'hidden'
               }}
             >
-              <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 1 }}>
+              <div
+                style={{
+                  position: 'absolute',
+                  // Restrict the falling cash stacks to the bottom portion of the box so they
+                  // never overlap the commission amount.  We leave the top 40% of the box
+                  // free of falling bills.
+                  top: '40%',
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  pointerEvents: 'none',
+                  zIndex: 1
+                }}
+              >
                 <div style={{ position: 'absolute', inset: 0 }}>
                   {cashStacks.map((s, i) => (
                     <CashStack key={s.id} index={i} />
