@@ -571,37 +571,36 @@ export default function Home() {
   // Hold a reference to the confetti function once it has been loaded on the client.
   const confettiRef = useRef(null);
   /*
-   * Load the canvas-confetti module on demand.  We avoid a static import at
-   * the module level because the default package entry may resolve to a Node
-   * build that doesn't execute in the browser when used with dynamic import.
-   * Instead, we attempt to import the module the first time a split is chosen.
-   * If successful, the returned function is cached on confettiRef.  Subsequent
-   * clicks will reuse the cached function.  If the import fails, no confetti
-   * will fire.
+   * Load the canvas-confetti module once on the client.  We avoid a static
+   * import at the top-level because Next.js may try to evaluate the module
+   * during server-side rendering, which would fail.  By performing the
+   * import inside useEffect and guarding with `typeof window !== 'undefined'`,
+   * we ensure that confetti is only loaded in the browser.  Once loaded,
+   * the function is stored on confettiRef and reused for all split changes.
    */
-  const chooseSplit = async (pct) => {
+  useEffect(() => {
+    let mounted = true;
+    if (typeof window !== 'undefined') {
+      import('canvas-confetti')
+        .then((mod) => {
+          const fn = mod.default || mod;
+          if (mounted && typeof fn === 'function') {
+            confettiRef.current = fn;
+          }
+        })
+        .catch(() => {
+          // ignore dynamic import errors silently; confetti will just not fire
+        });
+    }
+    return () => {
+      mounted = false;
+    };
+  }, []);
+  const chooseSplit = (pct) => {
     setSplitPct(pct);
-    try {
-      let confettiFn = confettiRef.current;
-      if (!confettiFn) {
-        // Attempt to import the browser-friendly build of canvas-confetti.  If
-        // this import fails (e.g. the module isn't available), we fall back to
-        // the default entry.  Using await here means the UI will update the
-        // split percentage immediately, and confetti will fire once the module
-        // has finished loading.
-        const mod = await import('canvas-confetti/dist/confetti.browser').catch(() =>
-          import('canvas-confetti')
-        );
-        confettiFn = mod.default || mod;
-        if (typeof confettiFn === 'function') {
-          confettiRef.current = confettiFn;
-        }
-      }
-      if (typeof confettiFn === 'function') {
-        confettiFn({ particleCount: 120, spread: 70, origin: { y: 0.2 } });
-      }
-    } catch (err) {
-      // ignore dynamic import errors
+    const confettiFn = confettiRef.current;
+    if (typeof confettiFn === 'function') {
+      confettiFn({ particleCount: 120, spread: 70, origin: { y: 0.2 } });
     }
   };
   const numericSystemSize = parseFloat(systemSize) || 0;
