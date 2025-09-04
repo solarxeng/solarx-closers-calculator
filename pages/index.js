@@ -571,36 +571,36 @@ export default function Home() {
   // Hold a reference to the confetti function once it has been loaded on the client.
   const confettiRef = useRef(null);
   /*
-   * Load the canvas-confetti module once on the client.  We avoid a static
-   * import at the top-level because Next.js may try to evaluate the module
-   * during server-side rendering, which would fail.  By performing the
-   * import inside useEffect and guarding with `typeof window !== 'undefined'`,
-   * we ensure that confetti is only loaded in the browser.  Once loaded,
-   * the function is stored on confettiRef and reused for all split changes.
+   * We intentionally avoid loading canvas-confetti at module scope because
+   * Next.js might try to evaluate it during server-side rendering.  Instead,
+   * we lazily import the library the first time a closer split is selected.
+   * The loaded function is cached on confettiRef, so subsequent clicks
+   * reuse the same instance.  If the import fails (e.g. the module is not
+   * available), no confetti will fire but the commission calculation still
+   * works.
    */
-  useEffect(() => {
-    let mounted = true;
-    if (typeof window !== 'undefined') {
-      import('canvas-confetti')
-        .then((mod) => {
-          const fn = mod.default || mod;
-          if (mounted && typeof fn === 'function') {
-            confettiRef.current = fn;
-          }
-        })
-        .catch(() => {
-          // ignore dynamic import errors silently; confetti will just not fire
-        });
-    }
-    return () => {
-      mounted = false;
-    };
-  }, []);
-  const chooseSplit = (pct) => {
+  const chooseSplit = async (pct) => {
     setSplitPct(pct);
-    const confettiFn = confettiRef.current;
-    if (typeof confettiFn === 'function') {
-      confettiFn({ particleCount: 120, spread: 70, origin: { y: 0.2 } });
+    try {
+      let confettiFn = confettiRef.current;
+      if (!confettiFn) {
+        // Attempt to import the browser-friendly build of canvas-confetti. The
+        // `.browser.js` suffix ensures we load the ES module that works in
+        // the browser.  If this fails (e.g. the package layout differs),
+        // fall back to the default entry.
+        const mod = await import('canvas-confetti/dist/confetti.browser.js').catch(() =>
+          import('canvas-confetti')
+        );
+        confettiFn = mod.default || mod;
+        if (typeof confettiFn === 'function') {
+          confettiRef.current = confettiFn;
+        }
+      }
+      if (typeof confettiFn === 'function') {
+        confettiFn({ particleCount: 120, spread: 70, origin: { y: 0.2 } });
+      }
+    } catch (err) {
+      // ignore dynamic import errors; confetti will simply not fire
     }
   };
   const numericSystemSize = parseFloat(systemSize) || 0;
